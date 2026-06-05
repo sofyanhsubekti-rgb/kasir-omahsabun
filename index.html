@@ -404,6 +404,11 @@
         <div class="ac-list" id="acList"></div>
       </div>
     </div>
+    <div class="fg">
+      <label class="flbl">Nomor HP Pelanggan (opsional)</label>
+      <input class="finp" id="inpNomorHP" type="tel"
+             placeholder="Contoh: 08123456789" autocomplete="off" />
+    </div>
     <div class="printer-row">
       <div class="pr-dot idle" id="prDot"></div>
       <span id="prStatus">Printer belum terhubung</span>
@@ -692,18 +697,20 @@ async function prosesCheckout() {
   const btn = document.getElementById('btnCheckout');
   btn.disabled = true; btn.textContent = '⏳ Memproses...';
   const pelanggan = document.getElementById('inpPelanggan').value.trim() || '-';
+  const nomorHP = document.getElementById('inpNomorHP').value.trim() || '';
   try {
     for (const item of cart) {
       const r = await apiPost({
         action: 'add_transaksi_toko',
         id_produk: item.id,
         volume_ml: item.vol,
-        nama_pelanggan: pelanggan
+        nama_pelanggan: pelanggan,
+        nomor_hp: nomorHP
       });
       if (r.status !== 'ok') throw new Error(r.msg || 'Gagal simpan');
     }
     const total = cart.reduce((s, i) => s + i.subtotal, 0);
-    strukTerakhir = { items: [...cart], pelanggan, total, waktu: new Date() };
+    strukTerakhir = { items: [...cart], pelanggan, nomorHP, total, waktu: new Date() };
     if (btChar) await cetakStruk(strukTerakhir);
     // tampilkan sukses
     const detail = cart.map(i =>
@@ -713,7 +720,9 @@ async function prosesCheckout() {
        </div>`
     ).join('');
     document.getElementById('suksesPelanggan').textContent =
-      pelanggan !== '-' ? 'Pelanggan: ' + pelanggan : '';
+      pelanggan !== '-'
+        ? 'Pelanggan: ' + pelanggan + (nomorHP ? ' · ' + nomorHP : '')
+        : (nomorHP ? 'HP: ' + nomorHP : '');
     document.getElementById('suksesDetail').innerHTML =
       detail +
       `<div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);
@@ -732,6 +741,7 @@ async function prosesCheckout() {
 function selesai() {
   cart = [];
   document.getElementById('inpPelanggan').value = '';
+  document.getElementById('inpNomorHP').value = '';
   tutupOverlay('ovSukses');
   updateFab();
   renderProduk();
@@ -963,6 +973,7 @@ async function cetakStruk(struk) {
     s += BOLD + col32('TOTAL', 'Rp ' + fmt(struk.total)) + LF + UNBOLD;
     s += '================================\n' + CENTER;
     if (struk.pelanggan && struk.pelanggan !== '-') s += 'Pelanggan: ' + struk.pelanggan + LF;
+    if (struk.nomorHP) s += 'HP: ' + struk.nomorHP + LF;
     s += 'Terima kasih sudah berbelanja!\n' + LF + LF + LF + CUT;
     const enc = new TextEncoder();
     const buf = enc.encode(s);
