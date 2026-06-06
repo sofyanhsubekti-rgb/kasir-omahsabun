@@ -482,11 +482,8 @@ async function apiGet(action) {
 async function apiPost(payload) {
   const { action, key, ...rest } = payload;
   const body = { cmd: action || payload.cmd, secret: SECRET, data: rest };
-  const res = await fetch(WEBAPP_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
+  // Tanpa Content-Type header agar tidak memicu CORS preflight di Apps Script
+  const res = await fetch(WEBAPP_URL, { method: 'POST', body: JSON.stringify(body) });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
