@@ -716,6 +716,8 @@ async function prosesCheckout() {
         total: 'Rp ' + fmt(item.subtotal),
         pembayaran: 'Tunai',
         kasir: pelanggan !== '-' ? pelanggan : 'Toko',
+        nama_pelanggan: pelanggan !== '-' ? pelanggan : '',
+        nomor: nomorHP,
         catatan: nomorHP ? 'HP: ' + nomorHP : ''
       });
       if (r.status !== 'ok') throw new Error(r.error || r.msg || 'Gagal simpan');
