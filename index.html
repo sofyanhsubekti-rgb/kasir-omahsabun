@@ -445,7 +445,7 @@
 /* ════════════════════════════════════════════
    KONFIGURASI — sesuaikan jika URL berubah
    ════════════════════════════════════════════ */
-const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyMnORJAO92QQ-z5mhmT0nEVyi40W_NWjJ87E5VehhpwAbvJfptN6YMVTCOuD-1oOTY/exec';
+const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzHRL6f-hiiad2vubczN5xViqyjgm-32FjsZeXk3R0FgEKphlvCUNB7SG7QZpA201vk/exec';
 const SECRET     = 'omahsabun_naraya_2024';
 
 /* ════════════════════════════════════════════
@@ -475,14 +475,17 @@ document.addEventListener('DOMContentLoaded', () => {
    API HELPER
    ════════════════════════════════════════════ */
 async function apiGet(action) {
-  const res = await fetch(`${WEBAPP_URL}?action=${action}&key=${SECRET}`);
+  const res = await fetch(`${WEBAPP_URL}?cmd=${action}&secret=${SECRET}`);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
 async function apiPost(payload) {
+  const { action, key, ...rest } = payload;
+  const body = { cmd: action || payload.cmd, secret: SECRET, data: rest };
   const res = await fetch(WEBAPP_URL, {
     method: 'POST',
-    body: JSON.stringify({ ...payload, key: SECRET })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
@@ -518,13 +521,21 @@ async function muatProduk() {
     '<div class="loading" style="grid-column:span 2"><div class="spinner"></div><span>Memuat produk...</span></div>';
   try {
     const d = await apiGet('get_produk');
-    if (d.status !== 'ok') throw new Error(d.msg);
-    produkList = d.produk;
+    if (d.status !== 'ok') throw new Error(d.error || d.msg);
+    // Normalkan field ke format lama yg dipakai di seluruh kasir
+    produkList = (d.data || d.produk || []).map(p => ({
+      id:          p.id_produk  || p.id,
+      nama:        p.nama_produk|| p.nama,
+      kategori:    p.kategori   || '',
+      harga_per_ml:Number(p.harga_per_ml) || 0,
+      volume_std:  Number(p.volume_ml)    || 1000,
+      varian:      p.varian     || ''
+    }));
     buatChipKategori();
     renderProduk();
     // Muat pelanggan di background
     apiGet('get_pelanggan_list').then(r => {
-      if (r.status === 'ok') pelangganList = r.pelanggan;
+      if (r.status === 'ok') pelangganList = r.pelanggan || r.data || [];
     }).catch(() => {});
   } catch (e) {
     document.getElementById('prodGrid').innerHTML =
@@ -701,13 +712,16 @@ async function prosesCheckout() {
   try {
     for (const item of cart) {
       const r = await apiPost({
-        action: 'add_transaksi_toko',
-        id_produk: item.id,
-        volume_ml: item.vol,
-        nama_pelanggan: pelanggan,
-        nomor_hp: nomorHP
+        action: 'catat_kasir',
+        produk: item.nama,
+        jumlah: item.vol,
+        harga_per_ml: item.harga,
+        total: 'Rp ' + fmt(item.subtotal),
+        pembayaran: 'Tunai',
+        kasir: pelanggan !== '-' ? pelanggan : 'Toko',
+        catatan: nomorHP ? 'HP: ' + nomorHP : ''
       });
-      if (r.status !== 'ok') throw new Error(r.msg || 'Gagal simpan');
+      if (r.status !== 'ok') throw new Error(r.error || r.msg || 'Gagal simpan');
     }
     const total = cart.reduce((s, i) => s + i.subtotal, 0);
     strukTerakhir = { items: [...cart], pelanggan, nomorHP, total, waktu: new Date() };
@@ -760,8 +774,10 @@ async function muatStok() {
   try {
     const [alert, prod] = await Promise.all([apiGet('stok_alert'), apiGet('get_produk')]);
     const alertMap = {};
-    (alert.alerts || []).forEach(a => alertMap[a.id] = a);
-    const semua = prod.produk || [];
+    (alert.alerts || alert.data || []).forEach(a => alertMap[a.id] = a);
+    const semua = (prod.data || prod.produk || []).map(p => ({
+      id: p.id_produk || p.id, nama: p.nama_produk || p.nama
+    }));
     let aman=0, menipis=0, habis=0;
     document.getElementById('stokBar').style.display = 'flex';
     document.getElementById('sTotal').textContent = semua.length;
@@ -800,8 +816,8 @@ async function muatRiwayat() {
     '<div class="loading"><div class="spinner"></div><span>Memuat riwayat...</span></div>';
   try {
     const d = await apiGet('get_transaksi_toko_hari_ini');
-    if (d.status !== 'ok') throw new Error(d.msg);
-    const list = d.transaksi || [];
+    if (d.status !== 'ok') throw new Error(d.error || d.msg);
+    const list = d.transaksi || d.data || [];
     document.getElementById('rwBar').style.display    = 'flex';
     document.getElementById('rwJml').textContent      = d.jumlah || 0;
     document.getElementById('rwOmzet').textContent    = 'Rp ' + fmt(d.total_omzet || 0);
@@ -855,9 +871,9 @@ const KAT_ICON = {
 async function muatPengeluaran() {
   try {
     const d = await apiGet('get_pengeluaran_hari_ini');
-    if (d.status !== 'ok') throw new Error(d.msg);
+    if (d.status !== 'ok') throw new Error(d.error || d.msg);
     document.getElementById('penTotal').textContent = 'Rp ' + fmt(d.total || 0);
-    const list = d.pengeluaran || [];
+    const list = d.pengeluaran || d.data || [];
     if (!list.length) {
       document.getElementById('penList').innerHTML =
         '<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Belum ada pengeluaran hari ini</div></div>';
@@ -883,7 +899,7 @@ async function simpanPengeluaran() {
   if (!jml || jml <= 0) { showToast('Jumlah harus lebih dari 0'); return; }
   try {
     const r = await apiPost({ action:'add_pengeluaran', kategori:kat, keterangan:ket, jumlah:jml });
-    if (r.status !== 'ok') throw new Error(r.msg);
+    if (r.status !== 'ok') throw new Error(r.error || r.msg);
     document.getElementById('penKet').value = '';
     document.getElementById('penJml').value = '';
     showToast('✅ Pengeluaran berhasil disimpan');
