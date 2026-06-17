@@ -238,6 +238,7 @@
   </div>
   <div class="hdr-right">
     <span class="date-chip" id="tanggalHdr"></span>
+    <button class="btn-icon" id="btnSync" onclick="syncDevices()" title="Sinkronkan perangkat">🔗</button>
     <button class="btn-icon" onclick="refreshHalaman()" title="Refresh">🔄</button>
   </div>
 </header>
@@ -458,17 +459,96 @@ let katAktif      = '';
 let produkDipilih = null;
 let btChar        = null;
 let strukTerakhir = null;
+const DEVICE_ID   = getDeviceId();
+
+/* ════════════════════════════════════════════
+   DEVICE ID & LOCAL STORAGE
+   ════════════════════════════════════════════ */
+function getDeviceId() {
+  let id = localStorage.getItem('kasir_device_id');
+  if (!id) {
+    id = 'dev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem('kasir_device_id', id);
+  }
+  return id;
+}
+
+function saveCartLocal() {
+  localStorage.setItem('kasir_cart', JSON.stringify(cart));
+  localStorage.setItem('kasir_cart_time', Date.now().toString());
+}
+
+function loadCartLocal() {
+  try {
+    const saved = localStorage.getItem('kasir_cart');
+    if (saved) {
+      cart = JSON.parse(saved);
+      updateFab();
+    }
+  } catch (_) {}
+}
+
+/* ════════════════════════════════════════════
+   CLOUD SYNC — keranjang antar perangkat
+   ════════════════════════════════════════════ */
+async function syncCartToCloud() {
+  try {
+    await apiPost({
+      action: 'sync_session',
+      device_id: DEVICE_ID,
+      cart: JSON.stringify(cart),
+      timestamp: Date.now()
+    });
+  } catch (_) {}
+}
+
+async function loadCartFromCloud() {
+  try {
+    const d = await apiGet('get_session');
+    if (d.status === 'ok' && d.cart) {
+      const cloudCart = typeof d.cart === 'string' ? JSON.parse(d.cart) : d.cart;
+      const cloudTime = d.timestamp || 0;
+      const localTime = parseInt(localStorage.getItem('kasir_cart_time') || '0');
+      if (cloudTime > localTime && cloudCart.length > 0) {
+        cart = cloudCart;
+        saveCartLocal();
+        updateFab();
+        renderProduk();
+        showToast('🔄 Keranjang disinkronkan dari perangkat lain');
+        return true;
+      }
+    }
+  } catch (_) {}
+  return false;
+}
+
+async function syncDevices() {
+  const btn = document.getElementById('btnSync');
+  if (btn) { btn.style.animation = 'spin .8s linear infinite'; }
+  try {
+    if (cart.length > 0) {
+      await syncCartToCloud();
+      showToast('✅ Keranjang berhasil disinkronkan');
+    } else {
+      const synced = await loadCartFromCloud();
+      if (!synced) showToast('Tidak ada keranjang untuk disinkronkan');
+    }
+  } catch (_) {
+    showToast('❌ Gagal sinkronisasi');
+  }
+  if (btn) { btn.style.animation = 'none'; }
+}
 
 /* ════════════════════════════════════════════
    INIT
    ════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
-  // Tampilkan tanggal di header
   const opt = { weekday:'short', day:'numeric', month:'short' };
   document.getElementById('tanggalHdr').textContent =
     new Date().toLocaleDateString('id-ID', opt);
-  // Load data awal
+  loadCartLocal();
   muatProduk();
+  loadCartFromCloud();
 });
 
 /* ════════════════════════════════════════════
@@ -626,6 +706,8 @@ function tambahKeCart() {
     harga:    produkDipilih.harga_per_ml,
     subtotal: vol * produkDipilih.harga_per_ml
   });
+  saveCartLocal();
+  syncCartToCloud();
   tutupOverlay('ovProduk');
   updateFab();
   renderProduk();
@@ -671,6 +753,8 @@ function renderCartItems() {
 
 function hapusItem(i) {
   cart.splice(i, 1);
+  saveCartLocal();
+  syncCartToCloud();
   renderCartItems();
   updateFab();
   renderProduk();
@@ -753,6 +837,8 @@ async function prosesCheckout() {
 
 function selesai() {
   cart = [];
+  saveCartLocal();
+  syncCartToCloud();
   document.getElementById('inpPelanggan').value = '';
   document.getElementById('inpNomorHP').value = '';
   tutupOverlay('ovSukses');
