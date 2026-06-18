@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Kasir Omah Sabun</title>
-  <meta name="theme-color" content="#E65100" />
+  <meta name="theme-color" content="#006b5b" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Kasir Omah Sabun" />
   <style>
     *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
     :root{
-      --primary:#E65100;--primary-dark:#BF360C;--primary-light:#FF8A65;
-      --secondary:#00695C;--bg:#F5F5F5;--surface:#fff;
+      --primary:#006b5b;--primary-dark:#004d40;--primary-light:#4db6a8;
+      --secondary:#0c9a7a;--bg:#F5F5F5;--surface:#fff;
       --text:#212121;--text2:#757575;--border:#E0E0E0;
       --ok:#388E3C;--warn:#F57C00;--err:#D32F2F;
       --nav:64px;--hdr:56px;
@@ -398,6 +398,14 @@
       <input class="finp" id="inpNomorHP" type="tel"
              placeholder="Contoh: 08123456789" autocomplete="off" />
     </div>
+    <div class="fg">
+      <label class="flbl">Metode Pembayaran</label>
+      <select class="fsel" id="metodeBayar">
+        <option>Tunai</option>
+        <option>QRIS</option>
+        <option>Transfer Bank</option>
+      </select>
+    </div>
     <div class="divider"></div>
     <div id="cartList"></div>
     <div class="divider"></div>
@@ -507,7 +515,7 @@ function refreshHalaman() {
   if (id === 'stok')        muatStok();
   if (id === 'riwayat')     muatRiwayat();
   if (id === 'pengeluaran') muatPengeluaran();
-  showToast('Data diperbarui');
+  showToast('Memperbarui data...');
 }
 
 /* ════════════════════════════════════════════
@@ -662,10 +670,17 @@ function renderCartItems() {
     <div class="cart-item">
       <div class="cart-info">
         <div class="cart-nama">${item.nama}</div>
-        <div class="cart-det">${fmt(item.vol)} ML × Rp ${fmt(item.harga)}/ML</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+          <button class="vol-btn" style="width:28px;height:28px;font-size:16px;flex-shrink:0" onclick="ubahVolCart(${i},-250)">−</button>
+          <span style="font-size:13px;font-weight:600;min-width:58px;text-align:center">${fmt(item.vol)} ML</span>
+          <button class="vol-btn" style="width:28px;height:28px;font-size:16px;flex-shrink:0" onclick="ubahVolCart(${i},250)">+</button>
+        </div>
+        <div class="cart-det" style="margin-top:3px">Rp ${fmt(item.harga)}/ML</div>
       </div>
-      <div class="cart-price">Rp ${fmt(item.subtotal)}</div>
-      <button class="cart-del" onclick="hapusItem(${i})">🗑️</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <div class="cart-price">Rp ${fmt(item.subtotal)}</div>
+        <button class="cart-del" onclick="hapusItem(${i})">🗑️</button>
+      </div>
     </div>`).join('');
 }
 
@@ -675,6 +690,14 @@ function hapusItem(i) {
   updateFab();
   renderProduk();
   if (!cart.length) tutupOverlay('ovCart');
+}
+function ubahVolCart(i, delta) {
+  const vol = cart[i].vol + delta;
+  if (vol < 100) return;
+  cart[i].vol      = vol;
+  cart[i].subtotal = vol * cart[i].harga;
+  renderCartItems();
+  updateFab();
 }
 
 /* ════════════════════════════════════════════
@@ -686,7 +709,7 @@ function acPelanggan() {
   if (!val) { list.style.display = 'none'; return; }
   const match = pelangganList.filter(n => n.toLowerCase().includes(val)).slice(0, 5);
   if (!match.length) { list.style.display = 'none'; return; }
-  list.innerHTML = match.map(n => `<div class="ac-item" onclick="pilihPelanggan('${n}')">${n}</div>`).join('');
+  list.innerHTML = match.map(n => `<div class="ac-item" onclick="pilihPelanggan('${escHtml(n)}')">${escHtml(n)}</div>`).join('');
   list.style.display = 'block';
 }
 function pilihPelanggan(n) {
@@ -704,8 +727,9 @@ async function prosesCheckout() {
   if (!cart.length) { showToast('Keranjang masih kosong'); return; }
   const btn = document.getElementById('btnCheckout');
   btn.disabled = true; btn.textContent = '⏳ Memproses...';
-  const pelanggan = document.getElementById('inpPelanggan').value.trim() || '-';
-  const nomorHP = document.getElementById('inpNomorHP').value.trim() || '';
+  const pelanggan   = document.getElementById('inpPelanggan').value.trim() || '-';
+  const nomorHP     = document.getElementById('inpNomorHP').value.trim() || '';
+  const metodeBayar = document.getElementById('metodeBayar').value;
   try {
     for (const item of cart) {
       const r = await apiPost({
@@ -714,7 +738,7 @@ async function prosesCheckout() {
         jumlah: item.vol,
         harga_per_ml: item.harga,
         total: 'Rp ' + fmt(item.subtotal),
-        pembayaran: 'Tunai',
+        pembayaran: metodeBayar,
         kasir: pelanggan !== '-' ? pelanggan : 'Toko',
         nama_pelanggan: pelanggan !== '-' ? pelanggan : '',
         nomor: nomorHP,
@@ -732,10 +756,11 @@ async function prosesCheckout() {
          <span style="font-size:13px;font-weight:600">Rp ${fmt(i.subtotal)}</span>
        </div>`
     ).join('');
-    document.getElementById('suksesPelanggan').textContent =
-      pelanggan !== '-'
-        ? 'Pelanggan: ' + pelanggan + (nomorHP ? ' · ' + nomorHP : '')
-        : (nomorHP ? 'HP: ' + nomorHP : '');
+    const infoArr = [];
+    if (pelanggan !== '-') infoArr.push('Pelanggan: ' + pelanggan);
+    if (nomorHP) infoArr.push(nomorHP);
+    infoArr.push(metodeBayar);
+    document.getElementById('suksesPelanggan').textContent = infoArr.join(' · ');
     document.getElementById('suksesDetail').innerHTML =
       detail +
       `<div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);
@@ -755,6 +780,7 @@ function selesai() {
   cart = [];
   document.getElementById('inpPelanggan').value = '';
   document.getElementById('inpNomorHP').value = '';
+  document.getElementById('metodeBayar').value = 'Tunai';
   tutupOverlay('ovSukses');
   updateFab();
   renderProduk();
@@ -784,7 +810,7 @@ async function muatStok() {
       const al = alertMap[p.id];
       let cls='aman', lbl='AMAN';
       if (al) {
-        if (al.status.includes('HABIS')) { cls='habis'; lbl='HABIS'; habis++; }
+        if ((al.status||'').includes('HABIS')) { cls='habis'; lbl='HABIS'; habis++; }
         else { cls='menipis'; lbl='MENIPIS'; menipis++; }
       } else aman++;
       return `<div class="stok-item">
@@ -845,9 +871,10 @@ async function muatRiwayat() {
 
 function exportCSV() {
   apiGet('get_transaksi_toko_hari_ini').then(d => {
-    if (d.status !== 'ok' || !d.transaksi.length) { showToast('Tidak ada data untuk diekspor'); return; }
+    const trList = d.transaksi || d.data || [];
+    if (d.status !== 'ok' || !trList.length) { showToast('Tidak ada data untuk diekspor'); return; }
     const hdr  = 'No,Jam,Produk,Volume ML,Harga/ML,Total,Laba,Pelanggan\n';
-    const rows = d.transaksi.map((t, i) =>
+    const rows = trList.map((t, i) =>
       `${i+1},${t.jam},"${t.nama_produk}",${t.volume_ml},${t.harga_per_ml},${t.total},${t.laba},"${t.nama_pelanggan}"`
     ).join('\n');
     const blob = new Blob([hdr + rows], { type: 'text/csv;charset=utf-8;' });
@@ -868,6 +895,8 @@ const KAT_ICON = {
 };
 
 async function muatPengeluaran() {
+  document.getElementById('penList').innerHTML =
+    '<div class="loading"><div class="spinner"></div><span>Memuat pengeluaran...</span></div>';
   try {
     const d = await apiGet('get_pengeluaran_hari_ini');
     if (d.status !== 'ok') throw new Error(d.error || d.msg);
@@ -887,7 +916,10 @@ async function muatPengeluaran() {
         </div>
         <div class="pen-jml">Rp ${fmt(p.jumlah)}</div>
       </div>`).join('');
-  } catch (e) {}
+  } catch (e) {
+    document.getElementById('penList').innerHTML =
+      '<div class="empty"><div class="empty-icon">❌</div><div class="empty-text">Gagal memuat pengeluaran. Coba refresh.</div></div>';
+  }
 }
 
 async function simpanPengeluaran() {
@@ -1020,6 +1052,7 @@ document.querySelectorAll('.overlay').forEach(ov => {
    FORMAT & TOAST
    ════════════════════════════════════════════ */
 function fmt(n) { return Math.round(n).toLocaleString('id-ID'); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;'); }
 
 let _toastTimer;
 function showToast(msg) {
